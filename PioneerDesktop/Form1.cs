@@ -35,6 +35,8 @@ namespace PioneerDesktop
             button2.Enabled = false;
             button3.Enabled = false;
             receiver.SetVolumeEvent += (o, s) => this.UIThread(() => lblVolume.Text = s);
+            receiver.SetOnOffEvent+= (o, b) => this.UIThread(() => checkBox1.Checked = b);
+
         }
 
         public void SetupStart(IPAddress ipAddressAVReceiver)
@@ -54,6 +56,7 @@ namespace PioneerDesktop
                 button3.Enabled = true;
                 receiver.Connect(ipAddressAVReceiver);
                 receiver.QueryVolume();
+                receiver.QueryOnOff();
             }
         }
 
@@ -72,6 +75,18 @@ namespace PioneerDesktop
         private void button2_Click(object sender, EventArgs e)
         {
             receiver.VolumeDown();
+        }
+
+        private void checkBox1_CheckedChanged(object sender, EventArgs e)
+        {
+            if (((CheckBox) sender).Checked)
+            {
+                receiver.TurnOn();
+            }
+            else
+            {
+                receiver.TurnOff();
+            }
         }
     }
 }

@@ -10,6 +10,8 @@ namespace VSXControl
     public interface IAvReceiverControl
     {
         event EventHandler<string> SetVolumeEvent;
+        event EventHandler<bool> SetOnOffEvent;
+
         IPAddress DiscoverAvReceiver();
         int VolumeUp();
         int VolumeDown();
@@ -18,5 +20,8 @@ namespace VSXControl
         void Connect(IPAddress ip);
         void Disconnect();
 
+        void QueryOnOff();
+        void TurnOn();
+        void TurnOff();
     }
 }

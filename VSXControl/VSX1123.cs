@@ -14,118 +14,22 @@ namespace VSXControl
     public class VSX1123 : IAvReceiverControl
     {
         public event EventHandler<string> SetVolumeEvent;
+        public event EventHandler<bool> SetOnOffEvent;
 
         private readonly ManualResetEvent connectDone = new ManualResetEvent(false);
         private readonly ManualResetEvent sendDone = new ManualResetEvent(false);
         private readonly ManualResetEvent receiveDone = new ManualResetEvent(false);
         private Socket _sck;
         private int _port = 23;
+        private Utilities _utilities;
 
-        public IPAddress DiscoverAvReceiver()
+        public VSX1123()
         {
-            IPAddress discoveredIP = null;
-            var tokenSource = new CancellationTokenSource();
-            var token = tokenSource.Token;
+            _utilities = new Utilities();
+            _utilities.ReceiverThumbprint = "";
 
-            string computerName = Environment.GetEnvironmentVariable("COMPUTERNAME");
-
-            if (computerName == null)
-            {
-                throw new ApplicationException("Unable to retrieve COMPUTERNAME via environment variables.");
-            }
-            else
-            {
-                List<Task<IPAddress>> probeNetworkInterfacesList = new List<Task<IPAddress>>();
-                foreach (
-                    var hostAddress in
-                        Dns.GetHostAddresses(computerName).Where(ia => (ia.AddressFamily == AddressFamily.InterNetwork))
-                    )
-                {
-                    probeNetworkInterfacesList.Add(
-                        Task.Factory.StartNew(() => GetListOfAvReceivers(hostAddress, token))
-                        );
-
-                }
-
-                // Wait for 1 second to get the IP...
-                Task.WaitAll(probeNetworkInterfacesList.ToArray(), 2000, token);
-                
-                foreach (var task in probeNetworkInterfacesList)
-                {
-                    if (task.IsCompleted && task.Result != null)
-                    {
-                        discoveredIP = task.Result;
-                        break;
-                    }
-                }
-                // tasks are still running here... let's stop them to make the GC life easier
-                tokenSource.Cancel();
-            }
-
-            return discoveredIP;
         }
 
-        private IPAddress GetListOfAvReceivers(IPAddress hostAddress, CancellationToken ct)
-        {
-            IPEndPoint LocalEndPoint = new IPEndPoint(hostAddress, 60000);
-            IPEndPoint MulticastEndPoint = new IPEndPoint(IPAddress.Parse("239.255.255.250"), 1900);
-
-            Socket UdpSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-
-            UdpSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-            UdpSocket.Bind(LocalEndPoint);
-            UdpSocket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.AddMembership,
-                new MulticastOption(MulticastEndPoint.Address, IPAddress.Any));
-            UdpSocket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastTimeToLive, 2);
-            UdpSocket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastLoopback, true);
-
-            string SearchString =
-                "M-SEARCH * HTTP/1.1\r\nHOST:239.255.255.250:1900\r\nMAN:\"ssdp:discover\"\r\nST:ssdp:all\r\nMX:3\r\n\r\n";
-
-            UdpSocket.SendTo(Encoding.UTF8.GetBytes(SearchString), SocketFlags.None, MulticastEndPoint);
-
-            Debug.WriteLine("M-Search sent...\r\n");
-
-            byte[] ReceiveBuffer = new byte[64000];
-
-            int ReceivedBytes = 0;
-
-            while (!ct.IsCancellationRequested)
-            {
-                if (UdpSocket.Available > 0)
-                {
-                    ReceivedBytes = UdpSocket.Receive(ReceiveBuffer, SocketFlags.None);
-
-                    if (ReceivedBytes > 0)
-                    {
-                        string received = Encoding.UTF8.GetString(ReceiveBuffer, 0, ReceivedBytes);
-
-                        Debug.WriteLine(received);
-
-                        if (received.Contains("KnOS/3.2 UPnP/1.0 DMP/3.5"))
-                        {
-                            return GetReceiverIPFromSSDPResponse(received);
-                        }
-                    }
-                }
-                Debug.WriteLine("Waiting for: " + hostAddress.ToString());
-            }
-
-            return null;
-        }
-
-        private IPAddress GetReceiverIPFromSSDPResponse(string responseSSDP)
-        {
-            IPAddress theIP;
-
-            Debug.Print("Receiver found!\n" + responseSSDP);
-            int index1 = responseSSDP.IndexOf("http://") + 7;
-            int index2 = responseSSDP.IndexOf(":8080/");
-            string ipString = responseSSDP.Substring(index1, index2 - index1);
-            IPAddress.TryParse(ipString, out theIP);
-
-            return theIP;
-        }
 
         public void Connect(IPAddress ip)
         {
@@ -166,17 +70,6 @@ namespace VSXControl
             }
         }
 
-        //private async void ReceiveMessages()
-        //{
-        //    //buffer = new byte[255];
-        //    //StringBuilder sbStringBuilder = new StringBuilder();
-        //    //while (_sck.Receive(buffer) > 0)    
-        //    //{
-        //    //    sbStringBuilder.Append(Encoding.Default.GetString(buffer));
-        //    //}
-        //    //return sbStringBuilder.ToString();
-            
-        //}
 
         private void Receive()
         {
@@ -204,6 +97,18 @@ namespace VSXControl
                 {
                     SetVolumeEvent(this, response);
                 }
+                if (response.StartsWith("PWR"))
+                {
+                    if (response.StartsWith("PWR0"))
+                    {
+                        SetOnOffEvent(this, false);
+                    }
+                    if (response.StartsWith("PWR1"))
+                    {
+                        SetOnOffEvent(this, false);
+                    }
+                }
+
                 // There might be more data, so store the data received so far.
                 state.sb.Append(response);
                 //  Get the rest of the data.
@@ -271,5 +176,28 @@ namespace VSXControl
         }
 
 
+
+
+        public void QueryOnOff()
+        {
+            SendMessage("?P");
+
+        }
+
+        public void TurnOn()
+        {
+            SendMessage("PO");
+        }
+
+        public void TurnOff()
+        {
+            SendMessage("PF");
+        }
+
+
+        public IPAddress DiscoverAvReceiver()
+        {
+            return _utilities.DiscoverAvReceiver();
+        }
     }
 }
